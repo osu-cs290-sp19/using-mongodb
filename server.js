@@ -5,8 +5,6 @@ var exphbs = require('express-handlebars');
 var bodyParser = require('body-parser');
 var MongoClient = require('mongodb').MongoClient;
 
-var peopleData = require('./peopleData');
-
 var app = express();
 var port = process.env.PORT || 3000;
 
@@ -31,40 +29,66 @@ app.get('/', function (req, res, next) {
 });
 
 app.get('/people', function (req, res, next) {
-  res.status(200).render('peoplePage', {
-    people: peopleData
+  var collection = db.collection('people');
+  collection.find({}).toArray(function (err, people) {
+    if (err) {
+      res.status(500).send({
+        error: "Error fetching people from DB"
+      });
+    } else {
+      console.log("== people:", people);
+      res.status(200).render('peoplePage', {
+        people: people
+      });
+    }
   });
 });
 
 app.get('/people/:person', function (req, res, next) {
   var person = req.params.person.toLowerCase();
-  if (peopleData[person]) {
-    res.status(200).render('photoPage', peopleData[person]);
-  } else {
-    next();
-  }
+  var collection = db.collection('people');
+  collection.find({ personId: person }).toArray(function (err, people) {
+    if (err) {
+      res.status(500).send({
+        error: "Error fetching people from DB"
+      });
+    } else if (people.length < 1) {
+      next();
+    } else {
+      console.log("== people:", people);
+      res.status(200).render('photoPage', people[0]);
+    }
+  });
 });
 
 app.post('/people/:person/addPhoto', function (req, res, next) {
   var person = req.params.person.toLowerCase();
-  if (peopleData[person]) {
-    if (req.body && req.body.url && req.body.caption) {
-      peopleData[person].photos.push({
-        url: req.body.url,
-        caption: req.body.caption
-      });
-      fs.writeFile("peopleData.json", JSON.stringify(peopleData, null, 2), function (err) {
+  if (req.body && req.body.url && req.body.caption) {
+    var collection = db.collection('people');
+    var photo = {
+      url: req.body.url,
+      caption: req.body.caption
+    };
+    collection.updateOne(
+      { personId: person },
+      { $push: { photos: photo } },
+      function (err, result) {
         if (err) {
-          res.status(500).send("Error saving photo file");
+          res.status(500).send({
+            error: "Error inserting photo into DB"
+          });
         } else {
-          res.status(200).send("Success");
+          console.log("== update result:", result);
+          if (result.matchedCount > 0) {
+            res.status(200).send("Success");
+          } else {
+            next();
+          }
         }
-      });
-    } else {
-      res.status(400).send("Request needs a body with a URL and caption");
-    }
+      }
+    );
   } else {
-    next();
+    res.status(400).send("Request needs a body with a URL and caption");
   }
 });
 
